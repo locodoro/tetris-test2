@@ -10,8 +10,11 @@ import { useTetris } from '@/hooks/use-tetris';
 export function TetrisGame() {
   const { gameState, startGame, togglePause } = useTetris();
 
+  console.log('🎮 TetrisGame rendered, gameState:', gameState);
+
   // 게임 상태가 로드되지 않았으면 로딩 표시
   if (!gameState) {
+    console.log('⏳ Game state is null, showing loading screen');
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
         <div className="text-white text-xl">게임 로딩 중...</div>
@@ -19,8 +22,23 @@ export function TetrisGame() {
     );
   }
 
+  console.log('✅ Game state loaded:', {
+    score: gameState.score,
+    level: gameState.level,
+    lines: gameState.lines,
+    gameOver: gameState.gameOver,
+    paused: gameState.paused,
+    hasCurrentPiece: !!gameState.currentPiece
+  });
+
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div 
+      className="min-h-screen bg-gray-950 flex items-center justify-center p-4"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        console.log('🎯 TetrisGame div keydown:', e.code);
+      }}
+    >
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         {/* 게임 보드 */}
         <div className="flex flex-col items-center">
@@ -33,14 +51,20 @@ export function TetrisGame() {
           <div className="mt-4 flex gap-2">
             {!gameState.gameOver && (
               <Button
-                onClick={togglePause}
+                onClick={() => {
+                  console.log('⏸️ Pause button clicked');
+                  togglePause();
+                }}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
               >
                 {gameState.paused ? '재개' : '일시정지'}
               </Button>
             )}
             <Button
-              onClick={startGame}
+              onClick={() => {
+                console.log('🚀 New game button clicked');
+                startGame();
+              }}
               className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
             >
               새 게임

@@ -23,18 +23,24 @@ export function useTetris() {
 
   // 클라이언트에서만 초기 상태 설정
   useEffect(() => {
+    console.log('🎮 Initializing game state');
     setGameState(createInitialGameState());
+    console.log('✅ Game state initialized');
   }, []);
 
   // 게임 속도 계산
   const getDropTime = useCallback((level: number) => {
-    return Math.max(100, 1000 - (level - 1) * 100);
+    const dropTime = Math.max(100, 1000 - (level - 1) * 100);
+    console.log('⏱️ Drop time for level', level, ':', dropTime, 'ms');
+    return dropTime;
   }, []);
 
   // 게임 시작
   const startGame = useCallback(() => {
+    console.log('🚀 Starting new game');
     setGameState(createInitialGameState());
     setDropTime(getDropTime(1));
+    console.log('✅ New game started');
   }, [getDropTime]);
 
   // 게임 일시정지/재개
@@ -176,45 +182,206 @@ export function useTetris() {
 
   // 자동 하강
   const dropPiece = useCallback(() => {
-    movePiece(0, 1);
-  }, [movePiece]);
+    setGameState(prev => {
+      if (!prev || prev.gameOver || prev.paused || !prev.currentPiece) return prev;
+      return movePieceInState(prev, 0, 1);
+    });
+  }, []);
 
   // 키보드 이벤트 처리
   const handleKeyPress = useCallback((event: KeyboardEvent) => {
-    if (typeof window === 'undefined') return;
+    console.log('🔍 Key pressed:', event.code, 'Key:', event.key);
     
+    if (typeof window === 'undefined') {
+      console.log('❌ Window is undefined, returning early');
+      return;
+    }
+    
+    // 게임 상태 체크
     setGameState(prev => {
-      if (!prev || prev.gameOver) return prev;
+      if (!prev) {
+        console.log('❌ Game state is null');
+        return prev;
+      }
+      
+      if (prev.gameOver) {
+        console.log('❌ Game is over');
+        return prev;
+      }
+      
+      if (prev.paused) {
+        console.log('❌ Game is paused');
+        return prev;
+      }
 
+      console.log('✅ Processing key:', event.code);
+      
+      // 이벤트 처리
       switch (event.code) {
         case 'ArrowLeft':
+          console.log('⬅️ Moving left');
           event.preventDefault();
-          movePiece(-1, 0);
           break;
         case 'ArrowRight':
+          console.log('➡️ Moving right');
           event.preventDefault();
-          movePiece(1, 0);
           break;
         case 'ArrowDown':
+          console.log('⬇️ Moving down');
           event.preventDefault();
-          movePiece(0, 1);
           break;
         case 'ArrowUp':
+          console.log('⬆️ Rotating');
           event.preventDefault();
-          rotatePiece();
           break;
         case 'Space':
+          console.log('⬇️ Hard drop');
           event.preventDefault();
-          hardDropPiece();
           break;
         case 'KeyP':
+          console.log('⏸️ Toggle pause');
           event.preventDefault();
-          togglePause();
           break;
+        default:
+          console.log('❓ Unknown key:', event.code);
       }
+      
       return prev;
     });
-  }, [movePiece, rotatePiece, hardDropPiece, togglePause]);
+    
+    // setGameState 외부에서 실제 액션 실행
+    setTimeout(() => {
+      setGameState(currentState => {
+        if (!currentState || currentState.gameOver || currentState.paused) {
+          return currentState;
+        }
+        
+        switch (event.code) {
+          case 'ArrowLeft':
+            return movePieceInState(currentState, -1, 0);
+          case 'ArrowRight':
+            return movePieceInState(currentState, 1, 0);
+          case 'ArrowDown':
+            return movePieceInState(currentState, 0, 1);
+          case 'ArrowUp':
+            return rotatePieceInState(currentState);
+          case 'Space':
+            return hardDropInState(currentState);
+          case 'KeyP':
+            return { ...currentState, paused: !currentState.paused };
+          default:
+            return currentState;
+        }
+      });
+    }, 0);
+  }, []);
+
+  // 상태 내에서 조각 이동 함수
+  const movePieceInState = (state: GameState, dx: number, dy: number): GameState => {
+    if (!state.currentPiece) return state;
+
+    const newPosition = {
+      x: state.currentPiece.position.x + dx,
+      y: state.currentPiece.position.y + dy,
+    };
+
+    if (!isCollision(state.board, { ...state.currentPiece, position: newPosition })) {
+      return {
+        ...state,
+        currentPiece: { ...state.currentPiece, position: newPosition },
+      };
+    }
+
+    // 충돌이 발생하고 아래로 이동하려고 했을 때
+    if (dy > 0) {
+      const newBoard = placePiece(state.board, state.currentPiece);
+      const { newBoard: clearedBoard, linesCleared } = clearLines(newBoard);
+      const newLines = state.lines + linesCleared;
+      const newLevel = calculateLevel(newLines);
+      const scoreIncrease = calculateScore(linesCleared, state.level);
+
+      // 게임 오버 검사
+      if (isGameOver(clearedBoard)) {
+        return { ...state, gameOver: true };
+      }
+
+      return {
+        ...state,
+        board: clearedBoard,
+        currentPiece: null,
+        lines: newLines,
+        level: newLevel,
+        score: state.score + scoreIncrease,
+      };
+    }
+
+    return state;
+  };
+
+  // 상태 내에서 조각 회전 함수
+  const rotatePieceInState = (state: GameState): GameState => {
+    if (!state.currentPiece) return state;
+
+    const newRotation = (state.currentPiece.rotation + 1) % 4;
+    const rotatedPiece = { ...state.currentPiece, rotation: newRotation };
+
+    if (!isCollision(state.board, rotatedPiece)) {
+      return {
+        ...state,
+        currentPiece: rotatedPiece,
+      };
+    }
+
+    // 벽 킥 (wall kick) 시도
+    const kicks = [
+      { x: -1, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: -1, y: -1 },
+      { x: 1, y: -1 },
+    ];
+
+    for (const kick of kicks) {
+      const kickedPosition = {
+        x: state.currentPiece.position.x + kick.x,
+        y: state.currentPiece.position.y + kick.y,
+      };
+
+      if (!isCollision(state.board, { ...rotatedPiece, position: kickedPosition })) {
+        return {
+          ...state,
+          currentPiece: { ...rotatedPiece, position: kickedPosition },
+        };
+      }
+    }
+
+    return state;
+  };
+
+  // 상태 내에서 하드 드롭 함수
+  const hardDropInState = (state: GameState): GameState => {
+    if (!state.currentPiece) return state;
+
+    const { position, linesCleared } = hardDrop(state.board, state.currentPiece);
+    const newBoard = placePiece(state.board, { ...state.currentPiece, position });
+    const { newBoard: clearedBoard } = clearLines(newBoard);
+    const newLines = state.lines + linesCleared;
+    const newLevel = calculateLevel(newLines);
+    const scoreIncrease = calculateScore(linesCleared, state.level);
+
+    if (isGameOver(clearedBoard)) {
+      return { ...state, gameOver: true };
+    }
+
+    return {
+      ...state,
+      board: clearedBoard,
+      currentPiece: null,
+      lines: newLines,
+      level: newLevel,
+      score: state.score + scoreIncrease,
+    };
+  };
 
   // 게임 루프
   useEffect(() => {
@@ -252,11 +419,25 @@ export function useTetris() {
 
   // 키보드 이벤트 리스너
   useEffect(() => {
+    console.log('🎯 Setting up keyboard event listener');
+    
     if (typeof window !== 'undefined') {
+      console.log('✅ Window is available, adding event listener');
       window.addEventListener('keydown', handleKeyPress);
-      return () => {
-        window.removeEventListener('keydown', handleKeyPress);
+      
+      // 테스트용 이벤트 리스너 추가
+      const testHandler = (e: KeyboardEvent) => {
+        console.log('🧪 Test event listener triggered:', e.code);
       };
+      window.addEventListener('keydown', testHandler);
+      
+      return () => {
+        console.log('🧹 Cleaning up keyboard event listeners');
+        window.removeEventListener('keydown', handleKeyPress);
+        window.removeEventListener('keydown', testHandler);
+      };
+    } else {
+      console.log('❌ Window is not available');
     }
   }, [handleKeyPress]);
 
@@ -264,9 +445,6 @@ export function useTetris() {
     gameState,
     startGame,
     togglePause,
-    movePiece,
-    rotatePiece,
-    hardDropPiece,
   };
 }
 
