@@ -181,6 +181,8 @@ export function useTetris() {
 
   // 키보드 이벤트 처리
   const handleKeyPress = useCallback((event: KeyboardEvent) => {
+    if (typeof window === 'undefined') return;
+    
     setGameState(prev => {
       if (!prev || prev.gameOver) return prev;
 
@@ -250,10 +252,12 @@ export function useTetris() {
 
   // 키보드 이벤트 리스너
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyPress);
-    return () => {
-      window.removeEventListener('keydown', handleKeyPress);
-    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', handleKeyPress);
+      return () => {
+        window.removeEventListener('keydown', handleKeyPress);
+      };
+    }
   }, [handleKeyPress]);
 
   return {
