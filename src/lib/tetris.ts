@@ -67,8 +67,27 @@ export interface GameState {
   score: number;
   level: number;
   lines: number;
+  comboCount: number;
   gameOver: boolean;
   paused: boolean;
+  effects?: GameEffects;
+}
+
+// 애니메이션/이펙트 상태
+export interface GameEffects {
+  clearingRows: number[];
+  scorePopups: { 
+    id: string; 
+    value: number; 
+    x: number; 
+    y: number; 
+    t: number;
+    type?: 'line-clear' | 'hard-drop' | 'combo' | 'special' | 'soft-drop';
+    label?: string;
+  }[];
+  hardDropAnimating: boolean;
+  verticalTrails?: { id: string; x: number; y: number; h: number; t: number }[];
+  comboAnimation?: { id: string; comboCount: number; t: number };
 }
 
 // 초기 게임 상태
@@ -79,8 +98,10 @@ export const createInitialGameState = (): GameState => ({
   score: 0,
   level: 1,
   lines: 0,
+  comboCount: 0,
   gameOver: false,
   paused: false,
+  effects: { clearingRows: [], scorePopups: [], hardDropAnimating: false },
 });
 
 // 랜덤 테트로미노 생성
@@ -96,6 +117,65 @@ export function rotateTetromino(piece: number[][], rotation: number): number[][]
     rotated = rotated[0].map((_, index) => rotated.map(row => row[index]).reverse());
   }
   return rotated;
+}
+
+// 현재 피스의 실제 너비 계산
+export function getPieceWidth(
+  piece: { type: TetrominoType; position: { x: number; y: number }; rotation: number }
+): number {
+  const tetromino = rotateTetromino(TETROMINOES[piece.type], piece.rotation);
+  
+  let minX = Infinity;
+  let maxX = -Infinity;
+  
+  for (let y = 0; y < tetromino.length; y++) {
+    for (let x = 0; x < tetromino[y].length; x++) {
+      if (tetromino[y][x]) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+      }
+    }
+  }
+  
+  return maxX - minX + 1;
+}
+
+// 현재 피스의 실제 시작 X 오프셋 계산
+export function getPieceStartX(
+  piece: { type: TetrominoType; position: { x: number; y: number }; rotation: number }
+): number {
+  const tetromino = rotateTetromino(TETROMINOES[piece.type], piece.rotation);
+  
+  let minX = Infinity;
+  
+  for (let y = 0; y < tetromino.length; y++) {
+    for (let x = 0; x < tetromino[y].length; x++) {
+      if (tetromino[y][x]) {
+        minX = Math.min(minX, x);
+      }
+    }
+  }
+  
+  return piece.position.x + minX;
+}
+
+// 현재 피스의 실제 시작 Y 오프셋 계산
+export function getPieceStartY(
+  piece: { type: TetrominoType; position: { x: number; y: number }; rotation: number }
+): number {
+  const tetromino = rotateTetromino(TETROMINOES[piece.type], piece.rotation);
+  
+  let minY = Infinity;
+  
+  for (let y = 0; y < tetromino.length; y++) {
+    for (let x = 0; x < tetromino[y].length; x++) {
+      if (tetromino[y][x]) {
+        minY = Math.min(minY, y);
+      }
+    }
+  }
+  
+  return piece.position.y + minY;
 }
 
 // 새로운 조각 생성
@@ -178,6 +258,11 @@ export function calculateScore(linesCleared: number, level: number): number {
   return lineScores[linesCleared] * level;
 }
 
+// 콤보 점수 계산
+export function calculateComboScore(baseScore: number, comboCount: number): number {
+  return Math.floor(baseScore * (1 + comboCount * 0.5));
+}
+
 // 레벨 계산
 export function calculateLevel(lines: number): number {
   return Math.floor(lines / 10) + 1;
@@ -192,15 +277,43 @@ export function isGameOver(board: (TetrominoType | null)[][]): boolean {
 export function hardDrop(
   board: (TetrominoType | null)[][],
   piece: { type: TetrominoType; position: { x: number; y: number }; rotation: number }
-): { position: { x: number; y: number }; linesCleared: number } {
+): { position: { x: number; y: number }; linesCleared: number; dropDistance: number } {
   let newPosition = { ...piece.position };
+  let dropDistance = 0;
   
   while (!isCollision(board, { ...piece, position: { ...newPosition, y: newPosition.y + 1 } })) {
     newPosition.y++;
+    dropDistance++;
   }
   
   const newBoard = placePiece(board, { ...piece, position: newPosition });
   const { linesCleared } = clearLines(newBoard);
   
-  return { position: newPosition, linesCleared };
+  return { position: newPosition, linesCleared, dropDistance };
+}
+
+// 하드 드롭 점수 계산
+export function calculateHardDropScore(dropDistance: number): number {
+  return dropDistance * 2;
+}
+
+// 고스트(착지 가이드) 위치 계산 - 보드에 고정하거나 라인을 지우지 않고 예상 착지 y 좌표만 계산
+export function getGhostPosition(
+  board: (TetrominoType | null)[][],
+  piece: { type: TetrominoType; position: { x: number; y: number }; rotation: number }
+): { x: number; y: number } {
+  let ghostPosition = { ...piece.position };
+  while (!isCollision(board, { ...piece, position: { ...ghostPosition, y: ghostPosition.y + 1 } })) {
+    ghostPosition.y++;
+  }
+  return ghostPosition;
+}
+
+// 꽉 찬 라인 인덱스 추출 (애니메이션용 사전 탐지)
+export function getFullRowIndices(board: (TetrominoType | null)[][]): number[] {
+  const rows: number[] = [];
+  for (let y = 0; y < board.length; y++) {
+    if (board[y].every(cell => cell !== null)) rows.push(y);
+  }
+  return rows;
 }

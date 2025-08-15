@@ -1,3 +1,4 @@
+"use client";
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { TetrisBoard } from './tetris-board';
@@ -44,7 +45,8 @@ export function TetrisGame() {
         <div className="flex flex-col items-center">
           <TetrisBoard 
             board={gameState.board} 
-            currentPiece={gameState.currentPiece} 
+            currentPiece={gameState.currentPiece}
+            effects={gameState.effects}
           />
           
           {/* 게임 시작/일시정지 버튼 */}
@@ -78,6 +80,7 @@ export function TetrisGame() {
             score={gameState.score} 
             level={gameState.level} 
             lines={gameState.lines} 
+            comboCount={gameState.comboCount}
           />
           <NextPiece nextPiece={gameState.nextPiece} />
           <ControlsGuide />
